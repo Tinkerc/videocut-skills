@@ -28,13 +28,29 @@ API_KEY=$(grep VOLCENGINE_API_KEY "$ENV_FILE" | cut -d'=' -f2)
 echo "🎤 提交火山引擎转录任务..."
 echo "音频 URL: $AUDIO_URL"
 
+# 读取热词词典
+DICT_FILE="$(dirname "$SCRIPT_DIR")/字幕/词典.txt"
+HOT_WORDS=""
+if [ -f "$DICT_FILE" ]; then
+  # 把词典转换成 JSON 数组格式
+  HOT_WORDS=$(cat "$DICT_FILE" | grep -v '^$' | while read word; do echo "\"$word\""; done | tr '\n' ',' | sed 's/,$//')
+  echo "📖 加载热词: $(cat "$DICT_FILE" | grep -v '^$' | wc -l | tr -d ' ') 个"
+fi
+
+# 构建请求体
+if [ -n "$HOT_WORDS" ]; then
+  REQUEST_BODY="{\"url\": \"$AUDIO_URL\", \"hot_words\": [$HOT_WORDS]}"
+else
+  REQUEST_BODY="{\"url\": \"$AUDIO_URL\"}"
+fi
+
 # 步骤1: 提交任务
 SUBMIT_RESPONSE=$(curl -s -L -X POST "https://openspeech.bytedance.com/api/v1/vc/submit?language=zh-CN&use_itn=True&use_capitalize=True&max_lines=1&words_per_line=15" \
   -H "Accept: */*" \
   -H "x-api-key: $API_KEY" \
   -H "Connection: keep-alive" \
   -H "content-type: application/json" \
-  -d "{\"url\": \"$AUDIO_URL\"}")
+  -d "$REQUEST_BODY")
 
 # 提取任务 ID
 TASK_ID=$(echo "$SUBMIT_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)

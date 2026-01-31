@@ -132,8 +132,14 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
-// 内置 FFmpeg 剪辑逻辑（分段切割 + concat 方案，和预览完全一致的精度）
+// 内置 FFmpeg 剪辑逻辑（filter_complex 精确剪辑 + buffer + crossfade）
 function executeFFmpegCut(input, deleteList, output) {
+  // 配置参数
+  const BUFFER_MS = 50;     // 删除范围前后各扩展 50ms（吃掉气口和残音）
+  const CROSSFADE_MS = 30;  // 音频淡入淡出 30ms
+
+  console.log(`⚙️ 优化参数: 扩展范围=${BUFFER_MS}ms, 音频crossfade=${CROSSFADE_MS}ms`);
+
   // 检测音频偏移量（audio.mp3 的 start_time）
   let audioOffset = 0;
   try {
@@ -146,47 +152,103 @@ function executeFFmpegCut(input, deleteList, output) {
     // 忽略，使用默认 0
   }
 
-  // 补偿偏移：转录时间戳是基于 audio.mp3 的，需要减去偏移才能对应原视频
-  const sortedDelete = [...deleteList]
-    .map(seg => ({
-      start: Math.max(0, seg.start - audioOffset),
-      end: seg.end - audioOffset
-    }))
-    .sort((a, b) => a.start - b.start);
-
-  // 计算保留片段
-  const keepSegments = [];
-  let lastEnd = 0;
-
   // 获取视频总时长
   const probeCmd = `ffprobe -v error -show_entries format=duration -of csv=p=0 "file:${input}"`;
   const duration = parseFloat(execSync(probeCmd).toString().trim());
 
-  for (const seg of sortedDelete) {
-    // 直接使用原始时间戳，和预览一致
-    if (seg.start > lastEnd) {
-      keepSegments.push({ start: lastEnd, end: seg.start });
+  const bufferSec = BUFFER_MS / 1000;
+  const crossfadeSec = CROSSFADE_MS / 1000;
+
+  // 补偿偏移 + 扩展删除范围（前后各加 buffer）
+  const expandedDelete = deleteList
+    .map(seg => ({
+      start: Math.max(0, seg.start - audioOffset - bufferSec),
+      end: Math.min(duration, seg.end - audioOffset + bufferSec)
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  // 合并重叠的删除段
+  const mergedDelete = [];
+  for (const seg of expandedDelete) {
+    if (mergedDelete.length === 0 || seg.start > mergedDelete[mergedDelete.length - 1].end) {
+      mergedDelete.push({ ...seg });
+    } else {
+      mergedDelete[mergedDelete.length - 1].end = Math.max(mergedDelete[mergedDelete.length - 1].end, seg.end);
     }
-    lastEnd = Math.max(lastEnd, seg.end);
-  }
-  if (lastEnd < duration) {
-    keepSegments.push({ start: lastEnd, end: duration });
   }
 
-  console.log(`保留 ${keepSegments.length} 个片段`);
+  // 计算保留片段
+  const keepSegments = [];
+  let cursor = 0;
 
-  // 创建临时目录
+  for (const del of mergedDelete) {
+    if (del.start > cursor) {
+      keepSegments.push({ start: cursor, end: del.start });
+    }
+    cursor = del.end;
+  }
+  if (cursor < duration) {
+    keepSegments.push({ start: cursor, end: duration });
+  }
+
+  console.log(`保留 ${keepSegments.length} 个片段，删除 ${mergedDelete.length} 个片段`);
+
+  // 生成 filter_complex（带 crossfade）
+  let filters = [];
+  let vconcat = '';
+
+  for (let i = 0; i < keepSegments.length; i++) {
+    const seg = keepSegments[i];
+    filters.push(`[0:v]trim=start=${seg.start.toFixed(3)}:end=${seg.end.toFixed(3)},setpts=PTS-STARTPTS[v${i}]`);
+    filters.push(`[0:a]atrim=start=${seg.start.toFixed(3)}:end=${seg.end.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`);
+    vconcat += `[v${i}]`;
+  }
+
+  // 视频直接 concat
+  filters.push(`${vconcat}concat=n=${keepSegments.length}:v=1:a=0[outv]`);
+
+  // 音频使用 acrossfade 逐个拼接（消除接缝咔声）
+  if (keepSegments.length === 1) {
+    filters.push(`[a0]anull[outa]`);
+  } else {
+    let currentLabel = 'a0';
+    for (let i = 1; i < keepSegments.length; i++) {
+      const nextLabel = `a${i}`;
+      const outLabel = (i === keepSegments.length - 1) ? 'outa' : `amid${i}`;
+      filters.push(`[${currentLabel}][${nextLabel}]acrossfade=d=${crossfadeSec.toFixed(3)}:c1=tri:c2=tri[${outLabel}]`);
+      currentLabel = outLabel;
+    }
+  }
+
+  const filterComplex = filters.join(';');
+
+  console.log('✂️ 执行 FFmpeg 精确剪辑（带 buffer + crossfade）...');
+
+  const cmd = `ffmpeg -y -i "file:${input}" -filter_complex "${filterComplex}" -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k "file:${output}"`;
+
+  try {
+    execSync(cmd, { stdio: 'pipe' });
+    console.log(`✅ 输出: ${output}`);
+
+    const newDuration = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "file:${output}"`).toString().trim());
+    console.log(`📹 新时长: ${newDuration.toFixed(2)}s`);
+  } catch (err) {
+    console.error('FFmpeg 执行失败，尝试分段方案...');
+    executeFFmpegCutFallback(input, keepSegments, output);
+  }
+}
+
+// 备用方案：分段切割 + concat（当 filter_complex 失败时使用）
+function executeFFmpegCutFallback(input, keepSegments, output) {
   const tmpDir = `tmp_cut_${Date.now()}`;
   fs.mkdirSync(tmpDir, { recursive: true });
 
   try {
-    // 分段切割（每个片段独立编码，精度最高）
     const partFiles = [];
     keepSegments.forEach((seg, i) => {
       const partFile = path.join(tmpDir, `part${i.toString().padStart(4, '0')}.mp4`);
       const segDuration = seg.end - seg.start;
 
-      // 使用输入前 -ss（精确 seek）+ 重编码
       const cmd = `ffmpeg -y -ss ${seg.start.toFixed(3)} -i "file:${input}" -t ${segDuration.toFixed(3)} -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 128k -avoid_negative_ts make_zero "${partFile}"`;
 
       console.log(`切割片段 ${i + 1}/${keepSegments.length}: ${seg.start.toFixed(2)}s - ${seg.end.toFixed(2)}s`);
@@ -194,20 +256,16 @@ function executeFFmpegCut(input, deleteList, output) {
       partFiles.push(partFile);
     });
 
-    // 生成 concat 列表
     const listFile = path.join(tmpDir, 'list.txt');
     const listContent = partFiles.map(f => `file '${path.resolve(f)}'`).join('\n');
     fs.writeFileSync(listFile, listContent);
 
-    // 用 concat demuxer 合并（无损合并）
     const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listFile}" -c copy "${output}"`;
     console.log('合并片段...');
     execSync(concatCmd, { stdio: 'pipe' });
 
     console.log(`✅ 输出: ${output}`);
-
   } finally {
-    // 清理临时文件
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
