@@ -6,64 +6,67 @@
  * 用法: node subtitle_server.js [port] [video_path]
  */
 
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const { execSync, spawn } = require('child_process');
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { execSync, spawn } = require("child_process");
 
 const PORT = process.argv[2] || 8898;
-const VIDEO_PATH = process.argv[3] || '';
-const SUBTITLES_FILE = './subtitles_with_time.json';
+const VIDEO_PATH = process.argv[3] || "";
+const SUBTITLES_FILE = "./subtitles_with_time.json";
 
 // 读取字幕数据
 let subtitles = [];
 if (fs.existsSync(SUBTITLES_FILE)) {
-  subtitles = JSON.parse(fs.readFileSync(SUBTITLES_FILE, 'utf8'));
+  subtitles = JSON.parse(fs.readFileSync(SUBTITLES_FILE, "utf8"));
   console.log(`📝 加载 ${subtitles.length} 条字幕`);
 } else {
-  console.error('❌ 找不到 subtitles_with_time.json');
+  console.error("❌ 找不到 subtitles_with_time.json");
   process.exit(1);
 }
 
 // 读取词典
-const DICT_FILE = path.join(__dirname, '..', '词典.txt');
+const DICT_FILE = path.join(__dirname, "..", "docs", "dictionary.txt");
 let dictionary = [];
 if (fs.existsSync(DICT_FILE)) {
-  dictionary = fs.readFileSync(DICT_FILE, 'utf8').split('\n').filter(l => l.trim());
+  dictionary = fs
+    .readFileSync(DICT_FILE, "utf8")
+    .split("\n")
+    .filter((l) => l.trim());
   console.log(`📖 加载词典 ${dictionary.length} 条`);
 }
 
 const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     res.writeHead(200);
     res.end();
     return;
   }
 
   // API: 获取字幕
-  if (req.url === '/api/subtitles') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+  if (req.url === "/api/subtitles") {
+    res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(subtitles));
     return;
   }
 
   // API: 保存字幕
-  if (req.method === 'POST' && req.url === '/api/save') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
+  if (req.method === "POST" && req.url === "/api/save") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
       try {
         subtitles = JSON.parse(body);
         fs.writeFileSync(SUBTITLES_FILE, JSON.stringify(subtitles, null, 2));
-        console.log('💾 已保存字幕');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        console.log("💾 已保存字幕");
+        res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true }));
       } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }
     });
@@ -71,96 +74,137 @@ const server = http.createServer((req, res) => {
   }
 
   // API: 生成 SRT
-  if (req.url === '/api/srt') {
+  if (req.url === "/api/srt") {
     const srt = generateSRT(subtitles);
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(srt);
     return;
   }
 
   // API: 保存 SRT 文件
-  if (req.method === 'POST' && req.url === '/api/save-srt') {
+  if (req.method === "POST" && req.url === "/api/save-srt") {
     const srt = generateSRT(subtitles);
-    const srtPath = './3_输出/' + path.basename(VIDEO_PATH, '.mp4') + '.srt';
-    fs.mkdirSync('./3_输出', { recursive: true });
+    const srtPath = "./3_输出/" + path.basename(VIDEO_PATH, ".mp4") + ".srt";
+    fs.mkdirSync("./3_输出", { recursive: true });
     fs.writeFileSync(srtPath, srt);
-    console.log('💾 已保存 SRT:', srtPath);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    console.log("💾 已保存 SRT:", srtPath);
+    res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ success: true, path: srtPath }));
     return;
   }
 
   // API: 获取视频信息（时长+分辨率+帧率，用于预估烧录时间）
-  if (req.url === '/api/video-info') {
+  if (req.url === "/api/video-info") {
     try {
-      const dur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "file:${VIDEO_PATH}"`).toString().trim());
-      const streamInfo = execSync(`ffprobe -v error -show_entries stream=width,height,r_frame_rate -select_streams v:0 -of csv=p=0 "file:${VIDEO_PATH}"`).toString().trim();
-      const parts = streamInfo.split(',');
+      const dur = parseFloat(
+        execSync(
+          `ffprobe -v error -show_entries format=duration -of csv=p=0 "file:${VIDEO_PATH}"`,
+        )
+          .toString()
+          .trim(),
+      );
+      const streamInfo = execSync(
+        `ffprobe -v error -show_entries stream=width,height,r_frame_rate -select_streams v:0 -of csv=p=0 "file:${VIDEO_PATH}"`,
+      )
+        .toString()
+        .trim();
+      const parts = streamInfo.split(",");
       const width = parseInt(parts[0]) || 1920;
       const height = parseInt(parts[1]) || 1080;
-      const fpsStr = parts[2] || '30/1';
-      const fpsParts = fpsStr.split('/');
-      const fps = fpsParts.length === 2 ? parseInt(fpsParts[0]) / parseInt(fpsParts[1]) : parseFloat(fpsStr);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ duration: dur, width, height, fps: Math.round(fps) }));
+      const fpsStr = parts[2] || "30/1";
+      const fpsParts = fpsStr.split("/");
+      const fps =
+        fpsParts.length === 2
+          ? parseInt(fpsParts[0]) / parseInt(fpsParts[1])
+          : parseFloat(fpsStr);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ duration: dur, width, height, fps: Math.round(fps) }),
+      );
     } catch (err) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ duration: 0, width: 1920, height: 1080, fps: 30 }));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ duration: 0, width: 1920, height: 1080, fps: 30 }),
+      );
     }
     return;
   }
 
   // API: 烧录字幕（SSE 实时进度）
-  if (req.method === 'POST' && req.url === '/api/burn') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
+  if (req.method === "POST" && req.url === "/api/burn") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
       try {
         const { outline } = JSON.parse(body);
         const outlineVal = outline || 2;
-        const baseName = path.basename(VIDEO_PATH, '.mp4');
+        const baseName = path.basename(VIDEO_PATH, ".mp4");
 
-        fs.mkdirSync('./3_输出', { recursive: true });
+        fs.mkdirSync("./3_输出", { recursive: true });
 
         // 保存 SRT
         const srt = generateSRT(subtitles);
-        const srtPath = './3_输出/' + baseName + '.srt';
+        const srtPath = "./3_输出/" + baseName + ".srt";
         fs.writeFileSync(srtPath, srt);
-        console.log('💾 已保存 SRT:', srtPath);
+        console.log("💾 已保存 SRT:", srtPath);
 
         // 保存人工校对格式 (方便存档)
         const readable = generateReadableSubtitles(subtitles);
-        const readablePath = './3_输出/' + baseName + '_字幕稿.md';
+        const readablePath = "./3_输出/" + baseName + "_字幕稿.md";
         fs.writeFileSync(readablePath, readable);
-        console.log('📝 已保存字幕稿:', readablePath);
+        console.log("📝 已保存字幕稿:", readablePath);
 
         // 获取总帧数（用时长 × 帧率估算，比 -count_frames 快得多）
         let totalFrames = 0;
         try {
-          const dur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "file:${VIDEO_PATH}"`).toString().trim());
-          const fpsStr = execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "file:${VIDEO_PATH}"`).toString().trim();
-          const fpsParts = fpsStr.split('/');
-          const fps = fpsParts.length === 2 ? parseInt(fpsParts[0]) / parseInt(fpsParts[1]) : 30;
+          const dur = parseFloat(
+            execSync(
+              `ffprobe -v error -show_entries format=duration -of csv=p=0 "file:${VIDEO_PATH}"`,
+            )
+              .toString()
+              .trim(),
+          );
+          const fpsStr = execSync(
+            `ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "file:${VIDEO_PATH}"`,
+          )
+            .toString()
+            .trim();
+          const fpsParts = fpsStr.split("/");
+          const fps =
+            fpsParts.length === 2
+              ? parseInt(fpsParts[0]) / parseInt(fpsParts[1])
+              : 30;
           totalFrames = Math.round(dur * fps);
-        } catch(e) { totalFrames = 0; }
+        } catch (e) {
+          totalFrames = 0;
+        }
 
         // SSE 响应头
         res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
         });
 
-        const outputPath = './3_输出/' + baseName + '_字幕.mp4';
-        const args = ['-i', VIDEO_PATH, '-vf', `subtitles='${srtPath}':force_style='FontSize=22,FontName=PingFang SC,Bold=1,PrimaryColour=&H0000deff,OutlineColour=&H00000000,Outline=${outlineVal},Alignment=2,MarginV=30'`, '-c:a', 'copy', '-y', outputPath];
+        const outputPath = "./3_输出/" + baseName + "_字幕.mp4";
+        const args = [
+          "-i",
+          VIDEO_PATH,
+          "-vf",
+          `subtitles='${srtPath}':force_style='FontSize=22,FontName=PingFang SC,Bold=1,PrimaryColour=&H0000deff,OutlineColour=&H00000000,Outline=${outlineVal},Alignment=2,MarginV=30'`,
+          "-c:a",
+          "copy",
+          "-y",
+          outputPath,
+        ];
 
-        console.log('🎬 烧录字幕...');
+        console.log("🎬 烧录字幕...");
         const startTime = Date.now();
-        const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+        const proc = spawn("ffmpeg", args, { stdio: ["pipe", "pipe", "pipe"] });
 
         // 解析 ffmpeg stderr 进度
-        let lastProgress = '';
-        proc.stderr.on('data', (data) => {
+        let lastProgress = "";
+        proc.stderr.on("data", (data) => {
           const line = data.toString();
           const frameMatch = line.match(/frame=\s*(\d+)/);
           const speedMatch = line.match(/speed=\s*([\d.]+)x/);
@@ -169,11 +213,23 @@ const server = http.createServer((req, res) => {
             const frame = parseInt(frameMatch[1]);
             const speed = speedMatch ? parseFloat(speedMatch[1]) : 0;
             const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 0;
-            const percent = totalFrames > 0 ? Math.min(99, Math.round(frame / totalFrames * 100)) : 0;
+            const percent =
+              totalFrames > 0
+                ? Math.min(99, Math.round((frame / totalFrames) * 100))
+                : 0;
             const elapsed = (Date.now() - startTime) / 1000;
             let remaining = 0;
-            if (percent > 0) remaining = Math.round(elapsed / percent * (100 - percent));
-            const progress = JSON.stringify({ frame, totalFrames, percent, speed, fps, elapsed: Math.round(elapsed), remaining });
+            if (percent > 0)
+              remaining = Math.round((elapsed / percent) * (100 - percent));
+            const progress = JSON.stringify({
+              frame,
+              totalFrames,
+              percent,
+              speed,
+              fps,
+              elapsed: Math.round(elapsed),
+              remaining,
+            });
             if (progress !== lastProgress) {
               res.write(`data: ${progress}\n\n`);
               lastProgress = progress;
@@ -181,26 +237,29 @@ const server = http.createServer((req, res) => {
           }
         });
 
-        proc.on('close', (code) => {
+        proc.on("close", (code) => {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           if (code === 0) {
             console.log(`✅ 完成: ${outputPath} (耗时 ${elapsed}s)`);
-            res.write(`data: ${JSON.stringify({ done: true, path: outputPath, srtPath, readablePath, elapsed })}\n\n`);
+            res.write(
+              `data: ${JSON.stringify({ done: true, path: outputPath, srtPath, readablePath, elapsed })}\n\n`,
+            );
           } else {
             console.error(`❌ 烧录失败 (exit code ${code})`);
-            res.write(`data: ${JSON.stringify({ error: `ffmpeg exit code ${code}` })}\n\n`);
+            res.write(
+              `data: ${JSON.stringify({ error: `ffmpeg exit code ${code}` })}\n\n`,
+            );
           }
           res.end();
         });
 
-        proc.on('error', (err) => {
+        proc.on("error", (err) => {
           res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
           res.end();
         });
-
       } catch (err) {
-        console.error('❌ 烧录失败:', err.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        console.error("❌ 烧录失败:", err.message);
+        res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }
     });
@@ -208,27 +267,27 @@ const server = http.createServer((req, res) => {
   }
 
   // 视频文件
-  if (req.url === '/video.mp4' && VIDEO_PATH) {
+  if (req.url === "/video.mp4" && VIDEO_PATH) {
     const stat = fs.statSync(VIDEO_PATH);
     const range = req.headers.range;
 
     if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
+      const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
 
       res.writeHead(206, {
-        'Content-Type': 'video/mp4',
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': end - start + 1,
+        "Content-Type": "video/mp4",
+        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": end - start + 1,
       });
       fs.createReadStream(VIDEO_PATH, { start, end }).pipe(res);
     } else {
       res.writeHead(200, {
-        'Content-Type': 'video/mp4',
-        'Content-Length': stat.size,
-        'Accept-Ranges': 'bytes',
+        "Content-Type": "video/mp4",
+        "Content-Length": stat.size,
+        "Accept-Ranges": "bytes",
       });
       fs.createReadStream(VIDEO_PATH).pipe(res);
     }
@@ -236,14 +295,14 @@ const server = http.createServer((req, res) => {
   }
 
   // 主页面
-  if (req.url === '/' || req.url === '/index.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  if (req.url === "/" || req.url === "/index.html") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(generateHTML());
     return;
   }
 
   res.writeHead(404);
-  res.end('Not Found');
+  res.end("Not Found");
 });
 
 function formatSrtTime(seconds) {
@@ -251,28 +310,33 @@ function formatSrtTime(seconds) {
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   const ms = Math.round((seconds % 1) * 1000);
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")},${ms.toString().padStart(3, "0")}`;
 }
 
 function generateSRT(subs) {
-  return subs.map((s, i) =>
-    `${i + 1}\n${formatSrtTime(s.start)} --> ${formatSrtTime(s.end)}\n${s.text}\n`
-  ).join('\n');
+  return subs
+    .map(
+      (s, i) =>
+        `${i + 1}\n${formatSrtTime(s.start)} --> ${formatSrtTime(s.end)}\n${s.text}\n`,
+    )
+    .join("\n");
 }
 
 // 生成人工校对格式的字幕文件
 function generateReadableSubtitles(subs) {
-  return subs.map((s, i) => {
-    const start = formatReadableTime(s.start);
-    const end = formatReadableTime(s.end);
-    return `${i + 1}. ${start} → ${end}\n${s.text}`;
-  }).join('\n');
+  return subs
+    .map((s, i) => {
+      const start = formatReadableTime(s.start);
+      const end = formatReadableTime(s.end);
+      return `${i + 1}. ${start} → ${end}\n${s.text}`;
+    })
+    .join("\n");
 }
 
 function formatReadableTime(seconds) {
   const m = Math.floor(seconds / 60);
   const s = (seconds % 60).toFixed(2);
-  return m.toString().padStart(2, '0') + ':' + s.padStart(5, '0');
+  return m.toString().padStart(2, "0") + ":" + s.padStart(5, "0");
 }
 
 function generateHTML() {
@@ -362,7 +426,7 @@ function generateHTML() {
       <div class="subtitle-list" id="subtitleList"></div>
       <div class="dict-panel">
         <strong>词典：</strong>
-        <span id="dictWords">${dictionary.map(w => `<span class="dict-word" onclick="insertWord('${w}')">${w}</span>`).join('')}</span>
+        <span id="dictWords">${dictionary.map((w) => `<span class="dict-word" onclick="insertWord('${w}')">${w}</span>`).join("")}</span>
       </div>
     </div>
   </div>

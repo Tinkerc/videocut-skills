@@ -47,10 +47,10 @@ curl -s -F "files[]=@audio.mp3" https://uguu.se/upload
 转录脚本会**自动读取词典**作为热词，提高识别准确率：
 
 ```bash
-# 词典位置: /Users/chengfeng/Desktop/AIos/剪辑Agent/.claude/skills/字幕/词典.txt
+# 词典位置: subtitle/docs/dictionary.txt
 # 脚本会自动加载
 
-bash ../剪口播/scripts/volcengine_transcribe.sh "https://o.uguu.se/xxxxx.mp3"
+bash ../../video-cut/scripts/volcengine_transcribe.sh "https://o.uguu.se/xxxxx.mp3"
 ```
 
 **词典格式**（每行一个词）：
@@ -132,7 +132,7 @@ Agent 应：
 
 ```bash
 cd 字幕目录/
-node /path/to/skills/字幕/scripts/subtitle_server.js 8898 "video.mp4"
+node /path/to/subtitle/scripts/subtitle_server.js 8898 "video.mp4"
 ```
 
 访问 http://localhost:8898

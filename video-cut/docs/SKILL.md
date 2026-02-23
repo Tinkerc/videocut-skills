@@ -9,8 +9,8 @@ output: subtitles_words.json、auto_selected.json、review.html
 pos: 转录+识别，到用户网页审核为止
 
 架构守护者：一旦我被修改，请同步更新：
-1. ../README.md 的 Skill 清单
-2. /CLAUDE.md 路由表
+1. ../../README.md 的 Skill 清单
+2. ../../CLAUDE.md 路由表
 -->
 
 # 剪口播 v2
@@ -29,7 +29,7 @@ pos: 转录+识别，到用户网页审核为止
 ```
 output/
 └── YYYY-MM-DD_视频名/
-    ├── 剪口播/
+    ├── video-cut/
     │   ├── 1_转录/
     │   │   ├── audio.mp3
     │   │   ├── volcengine_result.json
@@ -40,7 +40,7 @@ output/
     │   │   └── 口误分析.md
     │   └── 3_审核/
     │       └── review.html
-    └── 字幕/
+    └── subtitle/
         └── ...
 ```
 
@@ -77,7 +77,7 @@ output/
 VIDEO_PATH="/path/to/视频.mp4"
 VIDEO_NAME=$(basename "$VIDEO_PATH" .mp4)
 DATE=$(date +%Y-%m-%d)
-BASE_DIR="output/${DATE}_${VIDEO_NAME}/剪口播"
+BASE_DIR="output/${DATE}_${VIDEO_NAME}/video-cut"
 
 # 创建子目录
 mkdir -p "$BASE_DIR/1_转录" "$BASE_DIR/2_分析" "$BASE_DIR/3_审核"
@@ -97,15 +97,15 @@ curl -s -F "files[]=@audio.mp3" https://uguu.se/upload
 # 返回: {"success":true,"files":[{"url":"https://h.uguu.se/xxx.mp3"}]}
 
 # 3. 调用火山引擎 API
-SKILL_DIR="/Users/chengfeng/Desktop/AIos/剪辑Agent/.claude/skills/剪口播"
-"$SKILL_DIR/scripts/volcengine_transcribe.sh" "https://h.uguu.se/xxx.mp3"
+SKILL_DIR="$(dirname "$0")/.."
+bash "$SKILL_DIR/scripts/volcengine_transcribe.sh" "https://h.uguu.se/xxx.mp3"
 # 输出: volcengine_result.json
 ```
 
 ### 步骤 4: 生成字幕
 
 ```bash
-node "$SKILL_DIR/scripts/generate_subtitles.js" volcengine_result.json
+node "$SKILL_DIR/../scripts/generate_subtitles.js" volcengine_result.json
 # 输出: subtitles_words.json
 
 cd ..
@@ -135,7 +135,7 @@ require('fs').writeFileSync('readable.txt', output.join('\\n'));
 
 #### 5.2 读取用户习惯
 
-先读 `用户习惯/` 目录下所有规则文件。
+先读 `docs/user-habits/` 目录下所有规则文件。
 
 #### 5.3 生成句子列表（关键步骤）
 
@@ -235,11 +235,11 @@ readable.txt 格式: idx|内容|时间
 cd ../3_审核
 
 # 6. 生成审核网页
-node "$SKILL_DIR/scripts/generate_review.js" ../1_转录/subtitles_words.json ../2_分析/auto_selected.json ../1_转录/audio.mp3
+node "$SKILL_DIR/../scripts/generate_review.js" ../1_转录/subtitles_words.json ../2_分析/auto_selected.json ../1_转录/audio.mp3
 # 输出: review.html
 
 # 7. 启动审核服务器
-node "$SKILL_DIR/scripts/review_server.js" 8899 "$VIDEO_PATH"
+node "$SKILL_DIR/../scripts/review_server.js" 8899 "$VIDEO_PATH"
 # 打开 http://localhost:8899
 ```
 
@@ -274,7 +274,6 @@ node "$SKILL_DIR/scripts/review_server.js" 8899 "$VIDEO_PATH"
 ### 火山引擎 API Key
 
 ```bash
-cd /Users/chengfeng/Desktop/AIos/剪辑Agent/.claude/skills
-cp .env.example .env
-# 编辑 .env 填入 VOLCENGINE_API_KEY=xxx
+# 在项目根目录创建 .claude/skills/.env
+echo "VOLCENGINE_API_KEY=your_key" > .claude/skills/.env
 ```
