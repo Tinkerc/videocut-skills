@@ -106,34 +106,39 @@ AI 会自动：
 
 | Skill | 功能 | 输入 | 输出 |
 |-------|------|------|------|
-| `安装` | 环境准备 | 无 | 安装日志 |
-| `剪口播` | 转录 + AI 审核 + 剪辑 | 视频文件 | 剪辑后视频 |
-| `字幕` | 生成字幕 | 视频文件 | 带字幕视频 |
-| `自更新` | 记录偏好 | 用户反馈 | 更新规则文件 |
+| `install` (安装) | 环境准备 | 无 | 安装日志 |
+| `video-cut` (剪口播) | 转录 + AI 审核 + 剪辑 | 视频文件 | 剪辑后视频 |
+| `subtitle` (字幕) | 生成字幕 | 视频文件 | 带字幕视频 |
+| `self-evolve` (自更新) | 记录偏好 | 用户反馈 | 更新规则文件 |
 
 ## 目录结构
 
 ```
-videocut/
+videocut-skills/
 ├── README.md           # 本文件
 ├── .env.example        # API Key 模板
-├── 安装/               # 环境安装 skill
-├── 剪口播/             # 核心：转录 + AI 审核 + 剪辑
-│   ├── SKILL.md        # 流程说明
-│   ├── *.js            # 脚本（生成字幕、审核页面、服务器）
-│   ├── *.sh            # 脚本（转录、剪辑）
-│   └── 用户习惯/       # 审核规则（可自定义）
-│       ├── 1-核心原则.md       # 删前保后
-│       ├── 2-语气词检测.md     # 嗯啊呃
-│       ├── 3-静音段处理.md     # >0.3s 删除
-│       ├── 4-重复句检测.md     # 相邻句开头相同
-│       ├── 5-卡顿词.md         # 那个那个、就是就是
-│       ├── 6-句内重复检测.md   # A+中间+A 模式
-│       ├── 7-连续语气词.md     # 嗯啊、啊呃
-│       └── 8-重说纠正.md       # 部分重复、否定纠正
-├── 字幕/               # 字幕生成与烧录
-│   └── 词典.txt        # 自定义词典
-└── 自更新/             # 自我进化机制
+├── install/            # 环境安装 skill
+│   ├── docs/           # SKILL.md 文档
+│   └── scripts/        # 安装脚本
+├── video-cut/          # 核心：转录 + AI 审核 + 剪辑
+│   ├── docs/           # SKILL.md 文档
+│   │   └── user-habits/    # 审核规则（可自定义）
+│   │       ├── 01-core-principle.md       # 删前保后
+│   │       ├── 02-filler-words.md         # 嗯啊呃
+│   │       ├── 03-silence-rules.md        # >0.3s 删除
+│   │       ├── 04-duplicate-sentences.md  # 相邻句开头相同
+│   │       ├── 05-stutter-words.md        # 那个那个、就是就是
+│   │       ├── 06-in-sentence-repeat.md   # A+中间+A 模式
+│   │       ├── 07-consecutive-fillers.md  # 嗯啊、啊呃
+│   │       ├── 08-restatement-correction.md # 部分重复、否定纠正
+│   │       └── 09-incomplete-sentences.md # 残句检测
+│   └── scripts/        # 脚本（转录、生成字幕、审核）
+├── subtitle/           # 字幕生成与烧录
+│   ├── docs/           # SKILL.md 文档
+│   │   └── dictionary.txt  # 自定义词典
+│   └── scripts/        # 字幕服务器
+└── self-evolve/        # 自我进化机制
+    └── docs/           # SKILL.md 文档
 ```
 
 ## 技术架构
@@ -188,7 +193,7 @@ videocut/
 
 ### Q: 如何添加自定义词典？
 
-编辑 `字幕/词典.txt`，每行一个词：
+编辑 `subtitle/docs/dictionary.txt`，每行一个词：
 ```
 Claude Code
 MCP
