@@ -13,8 +13,9 @@ When a user invokes a command, route to the appropriate skill:
 | Trigger | Skill | Purpose |
 |---------|-------|---------|
 | 安装, 环境准备, 初始化 | `install/` | First-time environment setup |
+| 转录视频, 生成字幕, 提取字幕 | `transcribe/` | Extract audio, transcribe, generate Markdown subtitles |
 | 剪口播, 处理视频, 识别口误 | `video-cut/` | Transcribe and identify speech errors |
-| 加字幕, 生成字幕, 字幕 | `subtitle/` | Generate and burn subtitles |
+| 加字幕, 烧录字幕, 字幕 | `subtitle/` | Generate and burn subtitles |
 | 更新规则, 记录反馈, 改进skill | `self-evolve/` | Learn from user feedback |
 
 ## Architecture
